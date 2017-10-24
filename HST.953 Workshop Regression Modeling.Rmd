@@ -1,0 +1,358 @@
+---
+title: 'HST.953 Workshop: Regression Modeling'
+author: "Ryo uchimido"
+date: "10/20/2017"
+output: html_document
+---
+
+---
+title: "HST.953 Workshop: Regression Modeling"
+author: "Your Name Here"
+date: "Oct 20, 2017"
+output: 
+  html_document: 
+    fig_height: 8
+    fig_width: 10
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#setwd("~/data/HST.953") # Students will need to set their own path or see below
+ if(!("Hmisc" %in% installed.packages()[,1])) {
+ install.packages("Hmisc")
+ }
+
+library(Hmisc)
+
+
+```
+
+## Instructions:
+
+For those students taking the course for credit, the work done during this workshop is to be handed in.  Please e-mail both your `Rmd` source file and `html` output to hst953hw@mit.edu no later than Friday Oct 27, 2017.
+
+*To complete the assignment, fill in necessary code in the places indicated with `# Students: Insert your code here` and text based answers `### Student Answer` *
+
+**Before beginning**, please test to see if the Rmd file will compile on your system by clicking the "Knit HTML button" in R studio above.
+
+
+## Regression: The Basics
+
+Regression in `R` has a nice unified framework for specifying regression models built around formulas.  This framework is useful as it works for many different types of models, such that it's very easy to transition from simple methods such as those used in this workshop, to very complex models, without having to learn a new syntax or format from scratch.
+
+Formulae are of the form: `outcome ~ covariate_1  + covariate_2 + ... confounder_1 + confounder_2`.  There are a couple of other quirks and shortcuts we will discuss soon enough.
+
+## Linear Regression (OLS)
+
+We will begin by loading the `aline-dataset.csv` file, and checking we have a complete dataset with the correct number of rows and columns (2751 and 50).
+
+```{r}
+dat <- read.csv("/Users/uchimidouryou/Documents/aline-dataset.csv")
+dim(dat)
+
+dat$age.cat <- cut2(dat$age,g=4)  # Added so the file will compile.  You will need to update this variable later on.
+dat$service_unit2 <- dat$service_unit=="MICU"  # Added so the file will compile.  You will need to update this variable later on.
+
+```
+
+The workhorse function in `R` for linear regression is called `lm`.  `lm` is best used with two arguments: 1) A model formula of the form we discussed in the previous section, and 2) a data frame to fit the model with.  Let's begin by plotting `bun_first` (covariate, x) and `creatinine_first` (outcome, y).
+
+
+```{r}
+plot(dat$bun_first,dat$creatinine_first)
+plot(dat$bun_first,dat$creatinine_first)
+```
+
+We looked at this last time, and noted the large variability and number of outliers between these two clinical labs.  Both of these can cause issues with regression models, and one way to address this is by transforming the data.  For instance, we could `log` the `bun_first` values and take the inverse-cube root of the `creatinine_first` values (we will also negate this to preserve the ordering).
+
+```{r}
+plot(log(dat$bun_first),-1/dat$creatinine_first^(1/3))
+plot(log(dat$bun_first),-1/dat$creatinine_first^(1/3))
+```
+
+The good news is that it appears we have stabilized the variance and reduce the number of problematic outliers, the complication is that when we fit linear regression models, the parameters will be estimated in terms of the transformed covariate *and* outcome.  This makes it's slightly more difficult to interpret.
+
+Let us push forward and fit such a model.  We could create a new column in our data frame with the transformed variables, but often we will be trying serveral types of transformations, and this can be burdensome.  We can apply transformation directly in the formula.  It's not always necessary, but it's a good idea to wrap any transformations in the `I` function. This tells `R` to evaluate what's in the paratheses before fitting the model.  This is important as the *^* operator means something different in a formula than elsewhere in `R`.  The desired transformation and model fit can be done in one line as follows.  Running the `summary` function on the new object, `bun.creat.lm` yields information about the model fit.
+
+```{r}
+bun.creat.lm <- lm(I(-1/dat$creatinine_first^(1/3)) ~ I(log(bun_first)),data=dat)
+summary(bun.creat.lm)
+confint(bun.creat.lm)
+
+library(sjPlot)
+sjp.lm(bun.creat.lm,type="coef")
+```
+
+
+
+We can add a best fit line to out plot above by using the `abline` function.
+
+```{r}
+plot(log(dat$bun_first),-1/dat$creatinine_first^(1/3),pch=19)
+abline(bun.creat.lm,col='red')
+```
+
+
+As you may know, both of these labs are used to monitor the kidneys, and imagine now that your clinician collaborators believe that comorbidities related to the kidneys (`renal_flg`) would impact this relationship.  As discussed in class, this impact can be in a number of different ways.  Let's examine this by fitting a separate intercept for each level of `renal_flg`, and then a model with a separate intercept *and* slope for each level.  We will start by making `renal_flg` a factor.
+
+```{r}
+dat$renal_flg <- as.factor(dat$renal_flg)
+```
+
+
+Now let's make the same plot as above, but will color code the data points by the `renal_flg` variable
+
+```{r}
+plot(log(dat$bun_first),-1/dat$creatinine_first^(1/3),pch=19,col=dat$renal_flg)
+```
+
+
+Finally, let's fit the two models, and run the `summary` function on each.
+
+```{r}
+bun.creat.renal.lm <-  lm(I(-1/dat$creatinine_first^(1/3)) ~ I(log(bun_first)) + renal_flg,data=dat)
+summary(bun.creat.renal.lm)
+
+bun.creat.renal.int.lm <- lm(I(-1/dat$creatinine_first^(1/3)) ~ I(log(bun_first))*renal_flg,data=dat)
+summary(bun.creat.renal.int.lm)
+
+```
+
+We can do hypothesis testing using the `anova` function and an F-test comparing the nested models.  First `bun.creat.renal.lm` and `bun.creat.renal.int.lm`:
+
+```{r}
+anova(bun.creat.renal.lm,bun.creat.renal.int.lm)
+```
+
+There doesn't appear to be any statistically significant evidence that the relationship between the transformed forms of creatinine and BUN requires separate slopes.  Do we need the `renal_flg` effect at all? Again we have nested models, and can use `anova`:
+
+```{r}
+anova(bun.creat.lm,bun.creat.renal.lm)
+```
+
+Here, there does appear to be statistically significant evidence that the renal effect is non-zero.
+
+Let's plot the points again, and the two lines representing patients with a renal comorbidity (red), and those without (black points, blue, line):
+
+
+```{r}
+plot(log(dat$bun_first),-1/dat$creatinine_first^(1/3),pch=19,col=dat$renal_flg)
+abline(a=coef(bun.creat.renal.lm)[1],b=coef(bun.creat.renal.lm)[2],col="blue",lwd=2)
+abline(a=sum(coef(bun.creat.renal.lm)[c(1,3)]),b=coef(bun.creat.renal.lm)[2],col="red",lwd=2)
+```
+
+### Student Question 1:
+
+> a) Make an appropriate plot to visual SOFA scores `sofa_first` by service unit (`service_unit`).
+
+> b) Some of the services have small number of patients.  Create a new variable called `service_unit2` with any service with less than 200 patients lumped into a new category, "Other".  Plot these new categories as you did in part a).  Comment briefly about any conclusions you would draw based on the figure.
+
+> c) Fit a regression with `sofa_first` as the outcome and `service_unit2` as a covariate.  Pick one service unit, explain what the estimated coefficient means, include a 95\% confidence interval and a p-value.
+
+> d) Conduct a hypothesis test to assess if the mean SOFA score is the same for all service units.
+
+> e) Add the `log(bun_first)` to your model in part c) (you do not need to consider an interaction).  Test if the coefficient for `log(bun_first)` is zero.  Interpret this new effect.
+
+
+
+```{r}
+# Students: put your code here
+
+```
+
+
+### Student Answer 1:
+
+Answer here.
+
+
+## Logistic Regression
+
+Luckily the same framework for linear regression works for logistic regression.  The main difference are two fold:
+
+1. We need to use a different function, called `glm` instead of `lm`.
+2. We need an additional argument (`family="binomial"`) telling `R` we wish to do a logistic regression.
+
+For example, let's say we want to estimate the effect of aline has on 28 day mortality:
+
+```{r}
+aline.glm <- glm(day_28_flg ~ aline_flg,data=dat,family="binomial")
+summary(aline.glm)
+```
+
+We can generate odds ratios by exponentiating the non-intercept terms in the logistic regression, models.  The cofficients are often called log-odds ratios.  Getting confidence intervals for these log-odds ratios can be done in a similar way as before, but they have limited use for us if we want to report the odds ratio.  One way of getting confidence intervals for the 
+
+```{r}
+exp(coef(aline.glm)[1])
+confint(aline.glm)
+exp(confint(aline.glm))
+
+```
+
+It's often convenient to summarise this information all in one plot or table, and the `sjPlot` package can help us do both:
+
+```{r}
+library(sjPlot)
+sjp.glm(aline.glm)
+```
+
+
+`r sjt.glm(aline.glm,show.header = FALSE, no.output=TRUE)$knitr`
+
+
+
+For comparison, let's try to see what happens when we estimate this using 2 x 2 tables:
+
+```{r}
+tab22 <- table(dat$aline_flg,dat$day_28_flg,dnn=c("Aline","28 Day Death"))
+tab22
+ptab22 <- prop.table(tab22,1)
+ptab22
+Odds22 <- ptab22[,2]/ptab22[,1]
+Odds22
+Odds22[2]/Odds22[1]
+```
+
+The last number, the estimated odds ratio corresponds to the `aline_flg` row in the previous `sjt.glm` table, while the first element of `Odds22`, `r Odds22[1] ` corresponds to the odds of 28 day death in the no aline group (i.e. the intercept).  Both match up, as is generally expected when comparing the two approaches with one covariate at a time.  
+
+
+One of the benefits that logistic regression has over something like 2x2 tables, is that it can handle continuous covariates and confounders quite easily.  For example let's look at `sofa_first` as the covariate and `day_28_flg` as the outcome.
+
+```{r}
+sofa.glm <- glm(day_28_flg ~ sofa_first,data=dat,family="binomial")
+summary(sofa.glm)
+sjp.glm(sofa.glm)
+```
+
+Here we see that the estimated odds of death increases about 7\% (OR=1.07, 95\% CI: 1.03-1.11, per unit increase in SOFA) and this is quite statistically significant (p<0.001).
+
+This presumes of course that the relationship between the log odds of death and SOFA is linear, which need not be the case.  There are several ways to formally test this, but assessing this visually can be useful.
+
+```{r}
+library(MIMICbook); library(Hmisc)
+dat$sofa_cat <- cut2(dat$sofa_first,c(0,4,7))
+plot_prop_by_level(dat,"sofa_cat","day_28_flg")
+plot_OR_by_level(dat,"sofa_cat","day_28_flg")
+```
+
+While not quite what we want (log odds of death by level), these plots suggest that the risk of death generally increases monotonically as SOFA increases.
+
+Let's combine the two models, and try to estimate the effect of `aline_flg` on 28 day mortality, while adjusting for SOFA.
+
+```{r}
+aline.sofa.glm <- glm(day_28_flg ~ aline_flg + sofa_first,data=dat,family="binomial")
+summary(aline.sofa.glm)
+sjp.glm(aline.sofa.glm)
+exp(coef(aline.sofa.glm))
+exp(confint((aline.sofa.glm)))
+
+```
+
+Here, we see not much changes.  The adjusted odds ratio for `aline_flg` is 0.99, 95\% CI: 0.80-1.22, p=0.94.  Based on this model, there's little statistically significant evidence to conclude that aline improves this outcome, while adjusting for SOFA.
+
+As was the case for linear regression, we can run a hypothesis test for nested models using the `anova` function  When the difference between the nested models is only one *term*, often the p-value (`Pr(>|z|)`) listed in the summary output will be close to that using a likelihood ratio test using the `anova` function, but this latter method can be in the case where testing more than one effect simulaneously is required (e.g., multi-level categorical variables).
+
+To test the statistical significance of `aline_flg`, we would compare the model with `aline_flg` and `sofa_first` to the model with just `sofa_first` as:
+
+```{r}
+anova(sofa.glm,aline.sofa.glm,test="Chisq")
+```
+
+where `test="Chisq"` is an appropriate setting for logistic regression.
+
+
+
+### Student Question 2:
+
+> a)  Fit a logistic regression between `aline_flg` and in hospital death (`hosp_exp_flg`).  Interpret and briefly explain the results of this model.
+> b) Fit a model with `age` as a continuous covariate for the same outcome (`hosp_exp_flg`).  Check to see if this is an appropriate form to use age in the model.
+> c) You can fit a model in a subset of the data using the `subset` parameter in `glm`.  For example, `subset=age<100`, includes only patients with age less than 100 in the model fit.  Repeat b), in this subset.  Do your results change?  Why or why not?
+> d) Regardless of your response in c), fit a logistic regression with age as a categorical variable (column) called `age.cat` using the `cut2` function and  `cuts` argument: `c(50,60,70,80)`, and the `aline_flg` variable for the `hosp_exp_flg` outcome.  Interpret and present your results.  Perform a hypothesis test two ways for the effect of `aline_flg`.  Use the entire data set, i.e., without any subset argument.
+> e) For the first model fit in part d), explain in no more than 50 words what the intercept means in this model.
+
+
+```{r}
+# Students: put your code here
+
+```
+
+
+### Student Answer 2:
+
+Answer here.
+
+
+
+
+
+## Model Selection
+
+The last topic in this workshop is related to model selection.  Model selection is an important area, where the data analyst is trying to find the model which explains the data the best, while also being no more complicated than necessary, as to avoid overfitting, and more difficulties in interpretation.  While there is no generally accepted best way to do model selection in our context, a couple of suggestions:
+
+1. Outline a plan and criteria you will use to do the model selection before you begin, and try to stick to it.
+2. Be transparent and reproducible in the methods you use.
+3. Try to find problems in your model, not as to rescue is from p>0.05, but rather to see if your results are robust to other specificiations of the model.
+
+In our case, we will examine a method known as stepwise forward selection.  (We cover stepwise backwards selection in Chapter 16 in the textbook).  There are many other approaches and methods which vary significantly in terms of their sophistication and assumptions.
+
+In stepwise forward selection, we begin by specifying our covariate of interest (`aline_flg`), outcome (`day_28_flg`), and list (with form) of potential confounders:
+
+1. age (<50, 50-60, 60-70,70-80, >80)
+2. sofa (0-4, 4-6, >7)
+3. service_unit (as defined earlier in this workshop for `service_unit2`)
+4. Binary co-morbidities: `renal_flg`, `chf_flg`, `cad_flg`, `stroke_flg`, `mal_flg`, and `resp_flg`.
+
+From a base model which includes only `aline_flg` and an intercept, we will add one variable at a time, by including the one with the smallest p-value, until we are left with no variables which are statistically significant, at the 0.05 level.
+
+First we fit a model with only `aline_flg` in it, called `base.glm`.  Then we use the `add1` function, which adds all variables specified in a formula for an argument called scope.  I have included all variables listed above (1-4).  `add1` fits all models which include the current model (now, `base.glm`) and one additional variable, and computes a p-value, comparing the nested models with and without that variable.  For example:
+
+```{r}
+base.glm <- glm(day_28_flg ~ aline_flg,data=dat,family="binomial")
+add1(base.glm,scope = ~ . +  age.cat + sofa_cat + service_unit2 + renal_flg + chf_flg + cad_flg + stroke_flg + mal_flg + resp_flg, test="Chisq")
+```
+
+Here we can see, several variables have p<0.05, with some listed as `< 2.2e-16`.  While it's possible to get a more precise estimate of the p-value, it's likely not meaningful.  For full transparency and reproducibility, we may have wished to specify some tie breaking rules, either by some ordering of a priori preceived importance, or something completely arbitrary (alphabetical).
+
+Let's continue by adding `age.cat`, and repeating the previous step, but this time using our new model with `aline_flg` and `age.cat`.
+
+```{r}
+fit2.glm <- update(base.glm, .~. + age.cat)
+add1(fit2.glm,scope = ~ . + age.cat +  sofa_cat + service_unit2 + renal_flg + chf_flg + cad_flg + stroke_flg + mal_flg + resp_flg, test="Chisq")
+```
+
+Here, we choose to add `service_unit2`, but could have also included `stroke_flg`.
+
+```{r}
+
+fit3.glm <- update(fit2.glm, .~. + service_unit2)
+add1(fit3.glm,scope = ~ . + age.cat + sofa_cat + service_unit2 + renal_flg + chf_flg + cad_flg + stroke_flg + mal_flg + resp_flg, test="Chisq")
+```
+
+We will now get you to complete the model selection procedure we started.
+
+### Student Question 3:
+
+> a) From the above output continue with the procedure we specified and began above.  Make sure to document the entire process.  Describe and interpret your final model, and discuss whether you think that after adjusting for these effects, `aline_flg` has any statistically significant impact on the outcome.
+
+> b) Create a odds ratio plot of the final model in a).
+
+> c) There are many other ways to do model selection, including automated procedures.  We would _not_ encourage you to use these automated methods as a first line of model selection, but can be useful for seeing if your result is robust to alternative procedures.  One such way to do this is to specifying a full model, and then perform model selection based on some pre-defined criteria.  For example, if `full.model` is your model with all variables in it, `stepAIC` in the `MASS` package will perform stepwise selection based on the Akaike Information Criteria.
+> Fit a model with all variables we considered in the forward selection (the 'full model').  Run `stepAIC` on this model with a `scope=list(lower=~aline_flg)` argument.
+
+> d) Another criteria is the BIC (or Bayesian Information Criteria).  Repeat step c), but add an additional argument: `k=log(n)`, where `n` needs to be the number of rows in the dataset.  How does this model compare with your parts a) and c)?  Does this conform with what is known about AIC and BIC?
+
+> e) Which model would you choose as the model you would present?  Why?  What other criteria would you like to use? (don't do these)  Does it make a difference from drawing any conclusions from the main study objective?
+
+
+
+
+
+```{r}
+# Students: put your code here
+
+```
+
+
+### Student Answer 3:
+
+Answer here.
