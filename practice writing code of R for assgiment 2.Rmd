@@ -1,0 +1,17 @@
+---
+title: "practice writing code of R for assingment2"
+author: "Ryo uchimido"
+date: "10/24/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#setwd("~/data/HST.953") # Students will need to set their own path or see below
+ if(!("Hmisc" %in% installed.packages()[,1])) {
+ install.packages("Hmisc")
+ }
+
+library(Hmisc)
+
+```
